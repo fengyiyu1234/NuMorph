@@ -3,18 +3,19 @@
 downsample_factor = 0.1;
 home_path = fileparts(which('NM_config'));
 annotation_path = fullfile(home_path,'data','annotation_data');
-load(fullfile(annotation_path,'annotationData.mat'),'annotationVolume')
+load(fullfile(annotation_path,'ccfv3.mat'),'annotationVolume')
+%load(fullfile(annotation_path,'annotationData.mat'),'annotationVolume')
 I_annotation = permute_orientation(annotationVolume,'sla','srp');
 [nrows,ncols,nslices] = size(I_annotation);
 nslices = nslices * downsample_factor;
 I_annotation = imresize3(I_annotation,[nrows,ncols,nslices],'Method','nearest');
 
-budam = flip(buda(198),1);
+budam = flip(crameri('buda',198),1);
 BuRd = flip(brewermap(198,'RdBu'),1);
 
 %% plot
 
-load('D:\annotated_cells\stats.mat');
+load('X:\Ryan\Light_Sheet_Imaged_Brains\11-07-2024-oc3-t10-tail\oc3-t10-tail-p5\numorph\analysis\stats.mat');
 ids = df_stats.id;
 classes=["yellow_neuron","yellow_glia","green_neuron","green_glia","red_neuron","red_glia"]; % swapped color
 for z = [48,68,88,108]

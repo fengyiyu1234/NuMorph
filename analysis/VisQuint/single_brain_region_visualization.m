@@ -1,4 +1,6 @@
 %% reigon-wise visualization
+clear
+close all
 
 downsample_factor = 0.1;
 load(fullfile('annotationData.mat'),'annotationVolume')
@@ -16,21 +18,21 @@ BuRd = flip(brewermap(198,'RdBu'),1);
 
 %% plot on 2D
 
-df_quint = readtable('A0247-cfos_RefAtlasRegions.csv'); % data
-
-for z = [10, 20, 30, 40]
+results = load('X:\Ryan\Light_Sheet_Imaged_Brains\Comparison\11-07-2024_OC3_T10_TAIL\analysis\results.mat'); % data
+densities = results.densities*1000; % 1327x6 array of densities
+for z = [10, 15, 20, 25, 30, 35, 40,45,50,55]
     vis = I_annotation(:,:,z);
     % boundaries = zeros(size(vis),'logical');
     mask = vis>0;
 
     % density (percentage)
     
-    density_header = 'Load';
+    density_header = 1;
     density_map = zeros(size(vis));
     % for i = 2:length(df_template.id)
     for i = [4:555,557:561,1106:1113,1192:1200] % regions of interest
-        if (df_quint.(density_header)(i+1) ~= inf) && (~isnan(df_quint.(density_header)(i+1)))
-            density_map(vis==i-1) = df_quint.(density_header)(i+1);
+        if (densities(i+1,density_header) ~= inf) && (~isnan(densities(i+1,density_header)))
+            density_map(vis==i-1) = densities(i+1,density_header);
         end
     end
 

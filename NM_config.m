@@ -32,7 +32,7 @@ end
 % Swicth from 'default' and specify complete path for custom location
 elastix_path_bin = 'default';
 elastix_path_lib = 'default';
-conda_path = 'default';
+conda_path = 'C:\Users\IMARIS\Anaconda3';
 
 % Make sure path is set
 home_path = fileparts(which('NM_config'));
