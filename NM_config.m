@@ -218,8 +218,116 @@ if run
     end
 end
 
+%if nargout == 2
+%    path_table = path_to_table(config);
+%end
+
 if nargout == 2
+    % 1. Execute original path table generation
     path_table = path_to_table(config);
+
+    fprintf('%s\t Executing robust coordinate clustering and validation... \n', datetime('now'));
+    
+    % [Parameter] Set spatial coordinate tolerance (e.g., 500 units)
+    tolerance = 300; 
+    
+    % --- Step A: Cluster X Coordinates ---
+    x_pos_all = sort(unique(path_table.x_pos));
+    if ~isempty(x_pos_all)
+        x_map = zeros(size(x_pos_all));
+        x_grid = 1;
+        x_map(1) = x_grid;
+        for i = 2:length(x_pos_all)
+            if (x_pos_all(i) - x_pos_all(i-1)) > tolerance
+                x_grid = x_grid + 1;
+            end
+            x_map(i) = x_grid;
+        end
+        % Write clustered grid indices back to path_table
+        for i = 1:length(x_pos_all)
+            path_table.x(path_table.x_pos == x_pos_all(i)) = x_map(i);
+        end
+    end
+
+    % --- Step B: Cluster Y Coordinates ---
+    y_pos_all = sort(unique(path_table.y_pos));
+    if ~isempty(y_pos_all)
+        y_map = zeros(size(y_pos_all));
+        y_grid = 1;
+        y_map(1) = y_grid;
+        for i = 2:length(y_pos_all)
+            if (y_pos_all(i) - y_pos_all(i-1)) > tolerance
+                y_grid = y_grid + 1;
+            end
+            y_map(i) = y_grid;
+        end
+        % Write clustered grid indices back to path_table
+        for i = 1:length(y_pos_all)
+            path_table.y(path_table.y_pos == y_pos_all(i)) = y_map(i);
+        end
+    end
+
+    % --- Step C: Initialize Validation Log ---
+    log_file = fullfile(config.output_directory, 'robust_path_log.txt');
+    fid = fopen(log_file, 'w');
+    fprintf(fid, '=== NuMorph Robust Path Table Validation Log ===\r\n');
+    fprintf(fid, 'Timestamp: %s\r\n', datetime('now'));
+    fprintf(fid, 'Clustering Tolerance: %d units\r\n', tolerance);
+    fprintf(fid, 'Final Grid Dimensions: %d x %d (X x Y)\r\n\r\n', max(path_table.x), max(path_table.y));
+
+    % --- Step D: Cross-Channel Consistency Check ---
+    channels = unique(path_table.channel_num);
+    if length(channels) > 1
+        ref_ch = channels(1);
+        ncols = max(path_table.x);
+        nrows = max(path_table.y);
+        error_count = 0;
+        
+        for c = 2:length(channels)
+            mov_ch = channels(c);
+            for ix = 1:ncols
+                for iy = 1:nrows
+                    % Extract files for current tile across channels
+                    ref_rows = path_table(path_table.x == ix & path_table.y == iy & path_table.channel_num == ref_ch, :);
+                    mov_rows = path_table(path_table.x == ix & path_table.y == iy & path_table.channel_num == mov_ch, :);
+                    
+                    n_ref = height(ref_rows);
+                    n_mov = height(mov_rows);
+                    
+                    % 1. Check if image counts match
+                    if n_ref ~= n_mov
+                        msg = sprintf('![COUNT MISMATCH] Tile X=%d, Y=%d | Ch%d: %d imgs, Ch%d: %d imgs', ...
+                            ix, iy, ref_ch, n_ref, mov_ch, n_mov);
+                        disp(msg);
+                        fprintf(fid, '%s\r\n', msg);
+                        error_count = error_count + 1;
+                    else
+                        % 2. Check if filenames (excluding paths) match
+                        [~, ref_names, ref_exts] = cellfun(@fileparts, ref_rows.file, 'UniformOutput', false);
+                        [~, mov_names, mov_exts] = cellfun(@fileparts, mov_rows.file, 'UniformOutput', false);
+                        
+                        diff_names = setdiff(strcat(ref_names, ref_exts), strcat(mov_names, mov_exts));
+                        if ~isempty(diff_names)
+                            msg = sprintf('![NAME MISMATCH] Tile X=%d, Y=%d | Filenames do not correspond', ix, iy);
+                            disp(msg);
+                            fprintf(fid, '%s\r\n', msg);
+                            for d = 1:min(3, length(diff_names))
+                                fprintf(fid, '    -> Example mismatch: %s\r\n', diff_names{d});
+                            end
+                            error_count = error_count + 1;
+                        end
+                    end
+                end
+            end
+        end
+        if error_count == 0
+            fprintf(fid, 'SUCCESS: All tiles matched perfectly across channels.\r\n');
+        end
+    end
+    fprintf(fid, '\r\nValidation Finished.\r\n');
+    fclose(fid);
+    fprintf('%s\t Validation complete. Log saved to: %s \n', datetime('now'), log_file);
+    % =========================================================================
 end
 
 end
