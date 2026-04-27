@@ -158,6 +158,9 @@ if isequal(config.align_method,'translation')
         end
         save(save_path,'alignment_table')
         
+        alignment_table{y,x} = []; % empty tile content, only save table 
+        clear aligned_tile;        % release memory
+        
         % Save samples
         if isequal(config.save_samples,"true") && ~isempty(config.align_tiles)
             fprintf('%s\t Saving samples \n',datetime('now'));
