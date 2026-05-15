@@ -4,11 +4,13 @@ function path_table_series = munge_aligned(config)
 % Remove unnecessary fields
 fields_to_remove = {'folder','date','isdir','bytes','datenum'};
 
-% Get directory contents
-paths_sub = dir(fullfile(config.output_directory,'aligned'));
+% Get directory contents: debug
+%paths_sub = dir(fullfile(config.output_directory,'aligned'));
+paths_sub = dir(fullfile(config.output_directory, 'aligned', '**', '*.tif'));
 
-% Check .tif in current folder
-paths_sub = paths_sub(arrayfun(@(x) contains(x.name,'.tif'),paths_sub));
+% Check .tif in current folder: debug
+%paths_sub = paths_sub(arrayfun(@(x) contains(x.name,'.tif'),paths_sub));
+paths_sub = paths_sub(~startsWith({paths_sub.name}, '._'));
 
 % Create new field for file location
 C = arrayfun(@(x) fullfile(paths_sub(1).folder,x.name),paths_sub,'UniformOutput',false);

@@ -157,9 +157,7 @@ if isequal(config.align_method,'translation')
            alignment_table{y,x} = aligned_tile;
         end
         save(save_path,'alignment_table')
-        
-        alignment_table{y,x} = []; % empty tile content, only save table 
-        clear aligned_tile;        % release memory
+
         
         % Save samples
         if isequal(config.save_samples,"true") && ~isempty(config.align_tiles)

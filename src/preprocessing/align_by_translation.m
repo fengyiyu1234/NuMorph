@@ -152,6 +152,7 @@ z_list(:,1) = ref_slices;
 path_new = path_table(path_table.markers == markers(1),:);
 for i = 2:length(markers)  
     table_sub = path_table(path_table.markers == markers(i),:);
+    fprintf('Marker: %s, Expected slices: %d, Found slices: %d\n', markers(i), size(z_list,1), height(table_sub));
     z_list(:,i) = table_sub.z - z_displacement(i);
     table_sub.z = z_list(:,i);
     path_new = cat(1,path_new,table_sub);
@@ -464,11 +465,13 @@ end
 % Get table index for translations for each marker
 t_idx = zeros(1,length(markers));
 for i = 2:length(markers)
-    if i>1 && any(~ismember(config.align_channels,i))
+    if i>1 && ~any(ismember(config.align_channels,i))
         continue
     end
-    t_idx(i) = find(contains(coreg_table.Properties.VariableNames,'X') &...
-        contains(coreg_table.Properties.VariableNames,markers(i)));
+    %t_idx(i) = find(contains(coreg_table.Properties.VariableNames,'X') &...
+    %    contains(coreg_table.Properties.VariableNames,markers(i)));
+    target_col = strcat('X_Shift_', char(markers(i)));
+    t_idx(i) = find(strcmp(coreg_table.Properties.VariableNames, target_col));
 end
     
 % Subset images to save
