@@ -79,6 +79,27 @@ if isequal(config.hierarchy_input,"true")
     y_pos = unique(path_table.y_pos);
     x_pos = unique(path_table.x_pos);
     z_pos = unique(path_table.z_pos);
+
+    % Safety guard: residual inter-channel jitter can cause multiple y_pos/x_pos
+    % values for the same logical tile.  Use the reference channel's coordinates
+    % as the canonical output path so all channels write to the same folder.
+    if length(y_pos) > 1 || length(x_pos) > 1
+        ref_rows = path_table(path_table.markers == markers(1), :);
+        y_pos_ref = unique(ref_rows.y_pos);
+        x_pos_ref = unique(ref_rows.x_pos);
+        if isscalar(y_pos_ref) && isscalar(x_pos_ref)
+            warning("Multiple y_pos/x_pos values detected for tile (row=%d, col=%d). " + ...
+                "Using reference channel coordinates (y_pos=%d, x_pos=%d) for output path.", ...
+                row, col, y_pos_ref, x_pos_ref);
+            y_pos = y_pos_ref;
+            x_pos = x_pos_ref;
+        else
+            warning("Could not resolve unique y_pos/x_pos for tile (row=%d, col=%d). " + ...
+                "Using first value.", row, col);
+            y_pos = y_pos(1);
+            x_pos = x_pos(1);
+        end
+    end
 end
 
 % Make sure there's only 1 tile
@@ -127,11 +148,16 @@ for i = 2:length(markers)
     res_equal(i-1) = all(config.resolution{1}(1:2) == config.resolution{i}(1:2));
 end
 
-% If not updating, save images and return
+% If not updating, load cached parameters and optionally write images.
+% Respects save_images flag, consistent with fresh-calculation behavior below.
 if ~update_table
-    write_aligned_images(config,alignment_table,res_equal,res_adj,row,col,y_pos,x_pos,z_pos)
+    fprintf("%s\t Cached alignment parameters found for tile (row=%d, col=%d). " + ...
+        "Skipping recalculation.\n", datetime('now'), row, col);
+    if isequal(save_images, "true")
+        write_aligned_images(config,alignment_table,res_equal,res_adj,row,col,y_pos,x_pos,z_pos)
+    end
     coreg_table = alignment_table;
-   return 
+    return
 end
 
 % Get z displacement

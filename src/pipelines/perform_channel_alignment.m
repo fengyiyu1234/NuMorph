@@ -125,10 +125,10 @@ if isequal(config.align_method,'translation')
         error("Selected subset of tiles to align outside range of all tiles")
     end
     
-    % If loading parameters, set image saving to false
-    if isequal(config.load_alignment_params,"true")
-        config.save_images = "false";
-    end
+    % Note: load_alignment_params controls whether stitching applies pre-computed
+    % alignment translations on-the-fly. It no longer overrides save_images here,
+    % so the user's save_images setting is respected during alignment.
+    % Setting save_images = "true" will calculate AND write aligned images in one run.
 
     % Perform channel alignment
     for idx = tiles_to_align
