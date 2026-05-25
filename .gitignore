@@ -20,6 +20,7 @@ src/analysis/3dunet/nuclei/NM_config.mat
 *.raw
 *.h5
 *.asv
+*.txt
 .SimulinkProject/
 slprj/*
 *.slxc

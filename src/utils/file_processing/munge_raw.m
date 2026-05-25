@@ -239,26 +239,72 @@ for i = 1:length(path_table_series)
         table_series.x_pos = table_series.x;
         table_series.z_pos = table_series.z;
 
-        % Calculate step for x, y, z positions
-        tmp_y = unique(table_series.y);
+        % Jitter tolerance: coordinates in units of 0.1 um, so 15 um = 150 units.
+        jitter_tolerance = 150;
+
+        % Snap raw coordinates to a canonical grid before normalization.
+        % This collapses jittered coordinates (e.g. 340600 vs 340700) so that
+        % unique() returns the correct number of tile positions and step_x/y
+        % are computed correctly.  For channels after the first, snap to the
+        % reference channel grid; for the first channel, cluster internally so
+        % that tiles within jitter_tolerance of each other share one value.
+        if i > 1 && isfield(table_series_final, config.markers(1))
+            ref_table = table_series_final.(config.markers(1));
+            ref_tiles  = unique([ref_table.y_pos, ref_table.x_pos], 'rows');
+            cur_tiles  = unique([table_series.y_pos, table_series.x_pos], 'rows');
+            for t = 1:size(cur_tiles, 1)
+                ty = cur_tiles(t, 1);
+                tx = cur_tiles(t, 2);
+                dists = sqrt((double(ref_tiles(:,1)) - double(ty)).^2 + ...
+                             (double(ref_tiles(:,2)) - double(tx)).^2);
+                [min_dist, closest_idx] = min(dists);
+                tile_mask = table_series.y_pos == ty & table_series.x_pos == tx;
+                if min_dist > 0 && min_dist <= jitter_tolerance
+                    fprintf("%s\t Channel %s tile (y_pos=%d, x_pos=%d) snapped to " + ...
+                        "reference (y_pos=%d, x_pos=%d) [jitter: %.1f um]\n", ...
+                        datetime('now'), config.markers(i), ty, tx, ...
+                        ref_tiles(closest_idx,1), ref_tiles(closest_idx,2), min_dist/10);
+                    table_series.y_pos(tile_mask) = ref_tiles(closest_idx, 1);
+                    table_series.x_pos(tile_mask) = ref_tiles(closest_idx, 2);
+                elseif min_dist > jitter_tolerance
+                    warning("Channel %s tile (y_pos=%d, x_pos=%d) is %.1f um from " + ...
+                        "nearest reference tile (tolerance: %.0f um). Tile not matched.", ...
+                        config.markers(i), ty, tx, min_dist/10, jitter_tolerance/10);
+                end
+            end
+        else
+            % First channel: cluster internally so jittered tiles share a
+            % canonical coordinate.  Sort unique positions and merge any two
+            % that are closer than jitter_tolerance.
+            table_series.y_pos = cluster_coords(table_series.y_pos, jitter_tolerance);
+            table_series.x_pos = cluster_coords(table_series.x_pos, jitter_tolerance);
+        end
+
+        % Now compute step from the snapped/clustered coordinates.
+        tmp_y = unique(table_series.y_pos);
         if length(tmp_y) > 1
             step_y = (max(tmp_y) - min(tmp_y))/(length(tmp_y) - 1);
         else
             step_y = 1;
-        end 
-        tmp_x = unique(table_series.x);
+        end
+        tmp_x = unique(table_series.x_pos);
         if length(tmp_x) > 1
             step_x = (max(tmp_x) - min(tmp_x))/(length(tmp_x) - 1);
         else
             step_x = 1;
         end
-        tmp_z = unique(table_series.z);
+        tmp_z = unique(table_series.z_pos);
         if length(tmp_z) > 1
             step_z = (max(tmp_z) - min(tmp_z))/(length(tmp_z) - 1);
         else
             step_z = 1;
         end
-        
+
+        % Copy snapped positions back to y/x/z before normalizing.
+        table_series.y = table_series.y_pos;
+        table_series.x = table_series.x_pos;
+        table_series.z = table_series.z_pos;
+
         if isequal(config.y_top2bottom,"false")
             table_series.y = -table_series.y;
         end
@@ -270,50 +316,25 @@ for i = 1:length(path_table_series)
         table_series.x = round((table_series.x - min(table_series.x))/step_x) + 1;
         table_series.z = round((table_series.z - min(table_series.z))/step_z) + 1;
 
-        % Cross-channel jitter correction: snap tile positions to the nearest
-        % reference channel tile within tolerance.
-        % Coordinates are in units of 0.1 um, so 15 um = 150 units.
+        % For channels after the first, replace normalized indices with the
+        % reference channel's indices (guarantees identical tile numbering
+        % even when the reference and current channels have different raw
+        % coordinate offsets due to residual floating-point rounding).
         if i > 1 && isfield(table_series_final, config.markers(1))
-            jitter_tolerance = 150;  % 15 um in units of 0.1 um
             ref_table = table_series_final.(config.markers(1));
-            ref_tiles  = unique([ref_table.y_pos, ref_table.x_pos], 'rows');
-            cur_tiles  = unique([table_series.y_pos, table_series.x_pos], 'rows');
-
+            cur_tiles = unique([table_series.y_pos, table_series.x_pos], 'rows');
             for t = 1:size(cur_tiles, 1)
                 ty = cur_tiles(t, 1);
                 tx = cur_tiles(t, 2);
-
-                % Euclidean distance to every reference tile
-                dists = sqrt((double(ref_tiles(:,1)) - double(ty)).^2 + ...
-                             (double(ref_tiles(:,2)) - double(tx)).^2);
-                [min_dist, closest_idx] = min(dists);
-
                 tile_mask = table_series.y_pos == ty & table_series.x_pos == tx;
-
-                if min_dist > 0 && min_dist <= jitter_tolerance
-                    fprintf("%s\t Channel %s tile (y_pos=%d, x_pos=%d) snapped to " + ...
-                        "reference (y_pos=%d, x_pos=%d) [jitter: %.1f um]\n", ...
-                        datetime('now'), config.markers(i), ty, tx, ...
-                        ref_tiles(closest_idx,1), ref_tiles(closest_idx,2), min_dist/10);
-
-                    % Snap raw coordinates to reference tile values
-                    table_series.y_pos(tile_mask) = ref_tiles(closest_idx, 1);
-                    table_series.x_pos(tile_mask) = ref_tiles(closest_idx, 2);
-
-                    % Also align normalized tile indices to reference channel
-                    ref_mask   = ref_table.y_pos == ref_tiles(closest_idx, 1) & ...
-                                 ref_table.x_pos == ref_tiles(closest_idx, 2);
-                    ref_y_idx  = unique(ref_table.y(ref_mask));
-                    ref_x_idx  = unique(ref_table.x(ref_mask));
+                ref_mask  = ref_table.y_pos == ty & ref_table.x_pos == tx;
+                if any(ref_mask)
+                    ref_y_idx = unique(ref_table.y(ref_mask));
+                    ref_x_idx = unique(ref_table.x(ref_mask));
                     if isscalar(ref_y_idx) && isscalar(ref_x_idx)
                         table_series.y(tile_mask) = ref_y_idx;
                         table_series.x(tile_mask) = ref_x_idx;
                     end
-
-                elseif min_dist > jitter_tolerance
-                    warning("Channel %s tile (y_pos=%d, x_pos=%d) is %.1f um from " + ...
-                        "nearest reference tile (tolerance: %.0f um). Tile not matched.", ...
-                        config.markers(i), ty, tx, min_dist/10, jitter_tolerance/10);
                 end
             end
         end
@@ -426,4 +447,20 @@ for j = 1:length(path_idx)
     end
 end
 
+end
+
+
+function coords = cluster_coords(coords, tolerance)
+% Snap values in coords so that any two values within tolerance of each
+% other share the same canonical value (the smallest in each cluster).
+vals = sort(unique(coords));
+canonical = vals;
+for k = 2:length(vals)
+    if vals(k) - canonical(k-1) <= tolerance
+        canonical(k) = canonical(k-1);
+    end
+end
+for k = 1:length(vals)
+    coords(coords == vals(k)) = canonical(k);
+end
 end

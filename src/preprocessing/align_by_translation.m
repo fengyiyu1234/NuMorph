@@ -508,67 +508,72 @@ else
     save_z = 1:height(coreg_table);
 end
 
-idx = find(cellfun(@(s) ~isempty(s),coreg_table.file_1(save_z)),1);
-ref_img = imread(coreg_table.file_1{idx});
-    
-% For each image in table
-for i = save_z
-    path_sub = coreg_table(coreg_table.Reference_Z == i,:);    
+first_idx = find(cellfun(@(s) ~isempty(s), coreg_table.file_1(save_z)), 1);
+ref_img = imread(coreg_table.file_1{first_idx});
+ref_size = size(ref_img);
+
+% Pre-create per-marker output directories to avoid mkdir races in parfor
+if isequal(config.hierarchy_input, "true")
     for j = 1:length(markers)
-        if j>1 && ~any(ismember(config.align_channels,j))
+        img_folder = fullfile(save_dir, markers(j), sprintf('%d', y_pos), ...
+            sprintf('%d_%d', y_pos, x_pos));
+        if ~isfolder(img_folder)
+            mkdir(img_folder);
+        end
+    end
+end
+
+% Write one z-slice per worker. When called inside the tile parfor this
+% degrades to a regular for-loop automatically (MATLAB nested parfor rule).
+parfor i = save_z
+    path_sub = coreg_table(coreg_table.Reference_Z == i, :);
+    for j = 1:length(markers)
+        if j > 1 && ~any(ismember(config.align_channels, j))
             continue
         end
-        
-        filepath = string(table2cell(coreg_table(i,j)));
+
+        filepath = string(table2cell(coreg_table(i, j)));
         if filepath == ""
-            mov_img = zeros(size(ref_img),'uint16');
+            mov_img = zeros(ref_size, 'uint16');
         else
             mov_img = imread(filepath);
 
             % Apply intensity adjustments
-            if isequal(config.adjust_intensity,"true")
-               if isequal(config.adj_params.(markers(j)).adjust_tile_shading,'basic')
-                   mov_img = apply_intensity_adjustment(mov_img,...
-                       'flatfield', config.adj_params.(markers(j)).flatfield,...
-                       'darkfield', config.adj_params.(markers(j)).darkfield);
-               elseif isequal(config.adj_params.(markers(j)).adjust_tile_shading,'manual')
-                  mov_img = apply_intensity_adjustment(mov_img,...
-                      'y_adj',config.adj_params.(markers(j)).y_adj);
-               end
+            if isequal(config.adjust_intensity, "true")
+                if isequal(config.adj_params.(markers(j)).adjust_tile_shading, 'basic')
+                    mov_img = apply_intensity_adjustment(mov_img, ...
+                        'flatfield', config.adj_params.(markers(j)).flatfield, ...
+                        'darkfield', config.adj_params.(markers(j)).darkfield);
+                elseif isequal(config.adj_params.(markers(j)).adjust_tile_shading, 'manual')
+                    mov_img = apply_intensity_adjustment(mov_img, ...
+                        'y_adj', config.adj_params.(markers(j)).y_adj);
+                end
             end
         end
 
         % Apply translations to non-reference image
         if j > 1
-            % Adjust resample resolution if necessary
             if ~res_equal(j-1)
-                mov_img = imresize(mov_img,res_adj{j-1},'bicubic');
+                mov_img = imresize(mov_img, res_adj{j-1}, 'bicubic');
             end
-
-            % Crop or pad to reference image
-            if any(size(ref_img) ~= size(mov_img))
+            if any(ref_size ~= size(mov_img))
                 mov_img = crop_to_ref(ref_img, mov_img);
             end
-
-            % Translate
-            mov_img = imtranslate(mov_img,[path_sub{1,t_idx(j)} path_sub{1,t_idx(j)+1}]);
+            mov_img = imtranslate(mov_img, [path_sub{1,t_idx(j)} path_sub{1,t_idx(j)+1}]);
         end
 
-        % Write aligned images
-        if isequal(config.hierarchy_input,"false")
-            img_name = sprintf('%s_%s_C%d_%s_0%d_0%d_aligned.tif',config.sample_id,num2str(coreg_table.Reference_Z(i),'%04.f'),j,markers(j),row,col);
-            img_path = fullfile(save_dir,img_name);
+        % Write aligned image
+        if isequal(config.hierarchy_input, "false")
+            img_name = sprintf('%s_%s_C%d_%s_0%d_0%d_aligned.tif', ...
+                config.sample_id, num2str(coreg_table.Reference_Z(i), '%04.f'), j, markers(j), row, col);
+            img_path = fullfile(save_dir, img_name);
         else
-            % Input as hierarchy; Rene
-            img_name = sprintf('%d_%d_%d.tif',y_pos,x_pos,z_pos(i));
-            img_folder = fullfile(save_dir,markers(j),sprintf('%d',y_pos),...,
-                sprintf('%d_%d',y_pos,x_pos));
-            if ~exist(img_folder, 'dir')
-                mkdir(img_folder);
-            end
-            img_path = fullfile(img_folder,img_name);
+            img_name = sprintf('%d_%d_%d.tif', y_pos, x_pos, z_pos(i));
+            img_folder = fullfile(save_dir, markers(j), sprintf('%d', y_pos), ...
+                sprintf('%d_%d', y_pos, x_pos));
+            img_path = fullfile(img_folder, img_name);
         end
-        imwrite(uint16(mov_img),img_path)
+        imwrite(uint16(mov_img), img_path)
     end
 end
 

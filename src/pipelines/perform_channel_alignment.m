@@ -91,19 +91,29 @@ if isequal(config.align_method,'translation')
         z_displacement_align = [];
     end
 
+    % Ensure a parallel pool is running before alignment begins
+    if isempty(gcp('nocreate'))
+        parpool('local', min(feature('numcores'), max(nb_tiles, 1)));
+    end
+
     % Perform z adjustment calculation
-    if ~isempty(z_disp_channels) || isequal(config.update_z_adjustment,"true")    
+    if ~isempty(z_disp_channels) || isequal(config.update_z_adjustment,"true")
         for k = 1:length(config.align_channels)
             align_marker = config.markers(config.align_channels(k));
             fprintf("%s\t Performing channel alignment z calculation for %s/%s \n",...
                 datetime('now'),align_marker,config.markers(1));
-            z_tile = zeros(1,numel(position_mat));
-            ave_signal = zeros(1,numel(position_mat));
-            for idx = 1:numel(position_mat)
-                [y,x] = find(position_mat==idx);
+            n_pos = numel(position_mat);
+            z_tile = zeros(1,n_pos);
+            ave_signal = zeros(1,n_pos);
+            % Pre-compute y/x for each position index so parfor can slice them
+            yx_zd = zeros(n_pos,2);
+            for idx = 1:n_pos
+                [yx_zd(idx,1), yx_zd(idx,2)] = find(position_mat==idx);
+            end
+            parfor idx = 1:n_pos
+                y = yx_zd(idx,1);  x = yx_zd(idx,2);
                 path_ref = path_table(path_table.x==x & path_table.y==y & path_table.markers == config.markers(1),:);
                 path_mov = path_table(path_table.x==x & path_table.y==y & path_table.markers == align_marker,:);
-                % This measures the displacement in z for a given channel to the reference
                 [z_tile(idx),ave_signal(idx)] = z_align_channel(config,path_mov,path_ref,config.align_channels(k));
                 fprintf("%s\t Predicted z displacement of %d for tile %d x %d \n",...
                     datetime('now'),z_tile(idx),y,x);
@@ -130,39 +140,60 @@ if isequal(config.align_method,'translation')
     % so the user's save_images setting is respected during alignment.
     % Setting save_images = "true" will calculate AND write aligned images in one run.
 
-    % Perform channel alignment
-    for idx = tiles_to_align
-        [y,x] = find(position_mat==idx);            
-        fprintf("%s\t Aligning channels by translation to %s for tile %d x %d \n",...
-                    datetime('now'),config.markers{1},y,x);
-        path_align = path_table(path_table.x==x & path_table.y==y,:);
-        aligned_tile = align_by_translation(config,path_align,z_displacement_align);
-                
-        % Save updated table rows/columns
-        if isequal(config.channel_alignment,"update") &&...
-                ~isempty(alignment_table{y,x})
+    % Pre-compute y/x for every tile so parfor can slice yx_pairs
+    n_tiles = length(tiles_to_align);
+    yx_pairs = zeros(n_tiles, 2);
+    old_tables = cell(n_tiles, 1);
+    for k = 1:n_tiles
+        [yk, xk] = find(position_mat == tiles_to_align(k));
+        yx_pairs(k,:) = [yk, xk];
+        old_tables{k} = alignment_table{yk, xk};
+    end
+
+    % Perform channel alignment in parallel across tiles.
+    % Each tile is fully independent: reads from different rows of path_table,
+    % writes to different sub-directories in the aligned folder.
+    new_tables = cell(n_tiles, 1);
+    parfor k = 1:n_tiles
+        yk = yx_pairs(k,1);  xk = yx_pairs(k,2);
+        fprintf("%s\t Aligning channels by translation to %s for tile %d x %d \n", ...
+            datetime('now'), config.markers{1}, yk, xk);
+        path_align = path_table(path_table.x==xk & path_table.y==yk, :);
+        aligned_tile = align_by_translation(config, path_align, z_displacement_align);
+
+        % Merge with existing table for update mode
+        if isequal(config.channel_alignment, "update") && ~isempty(old_tables{k})
+            merged = old_tables{k};
             if ~isempty(config.align_slices)
                 r_idx = config.align_slices{:};
             else
-                r_idx = true(1,height(aligned_tile));
+                r_idx = true(1, height(aligned_tile));
             end
             if ~isempty(config.align_channels)
-                c_idx = contains(aligned_tile.Properties.VariableNames,align_markers);
+                c_idx = contains(aligned_tile.Properties.VariableNames, align_markers);
             else
-                c_idx = true(1,length(aligned_tile.Properties.VariableNames));
+                c_idx = true(1, length(aligned_tile.Properties.VariableNames));
             end
-            alignment_table{y,x}(r_idx,c_idx) = aligned_tile(r_idx,c_idx);
-            alignment_table{y,x}(r_idx,[1,config.align_channels]) = aligned_tile(r_idx,[1,config.align_channels]);
+            merged(r_idx, c_idx) = aligned_tile(r_idx, c_idx);
+            merged(r_idx, [1, config.align_channels]) = aligned_tile(r_idx, [1, config.align_channels]);
+            new_tables{k} = merged;
         else
-           alignment_table{y,x} = aligned_tile;
+            new_tables{k} = aligned_tile;
         end
-        save(save_path,'alignment_table')
+    end
 
-        
-        % Save samples
-        if isequal(config.save_samples,"true") && ~isempty(config.align_tiles)
-            fprintf('%s\t Saving samples \n',datetime('now'));
-            save_samples(config,'alignment',path_align)
+    % Collect all results and save the alignment table once
+    for k = 1:n_tiles
+        alignment_table{yx_pairs(k,1), yx_pairs(k,2)} = new_tables{k};
+    end
+    save(save_path, 'alignment_table');
+
+    % Save samples if requested
+    if isequal(config.save_samples, "true") && ~isempty(config.align_tiles)
+        fprintf('%s\t Saving samples \n', datetime('now'));
+        for k = 1:n_tiles
+            path_align = path_table(path_table.x==yx_pairs(k,2) & path_table.y==yx_pairs(k,1), :);
+            save_samples(config, 'alignment', path_align);
         end
     end
     
