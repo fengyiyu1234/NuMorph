@@ -3,7 +3,6 @@ patches/*
 results/*
 extras/*
 tmp/*
-templates/*
 data/atlas/*
 data/annotation_data/*
 data/tmp/*
@@ -21,3 +20,6 @@ src/analysis/3dunet/nuclei/NM_config.mat
 *.raw
 *.h5
 *.asv
+.SimulinkProject/
+slprj/*
+*.slxc
