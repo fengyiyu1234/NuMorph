@@ -496,6 +496,10 @@ switch stage
 end
 
 % Save config structure
-save(fullfile('data','tmp','NM_variables.mat'),'-mat')
+tmp_dir = fullfile('data','tmp');
+if ~isfolder(tmp_dir)
+    mkdir(tmp_dir);
+end
+save(fullfile(tmp_dir,'NM_variables.mat'),'-mat')
 
 end

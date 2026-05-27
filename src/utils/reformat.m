@@ -3,9 +3,10 @@ function translation_table = reformat(config)
 
 load(fullfile(config.output_directory,'variables','alignment_table.mat'),...
     'alignment_table');
+translation_table = struct();
 t_size = size(alignment_table);
 for i = 2:length(config.markers)
-    if i>1 && any(~ismember(config.align_channels,i))
+    if ~ismember(i, config.align_channels)
         continue
     end
     

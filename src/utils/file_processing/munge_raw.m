@@ -26,8 +26,12 @@ ext = [".tif",".tiff",".nii",".nrrd",".nhdr",".mhd"];
 
 % Get list of all files in all sub_directories
 if length(config.img_directory) == 1
-    % all_files = dir(fullfile(config.img_directory,'*.*')); Rene
-    all_files = dir(fullfile(config.img_directory,'**/*.*'));
+    all_files = [dir(fullfile(config.img_directory,'**/*.tif')); ...
+                 dir(fullfile(config.img_directory,'**/*.tiff')); ...
+                 dir(fullfile(config.img_directory,'**/*.nii')); ...
+                 dir(fullfile(config.img_directory,'**/*.nrrd')); ...
+                 dir(fullfile(config.img_directory,'**/*.nhdr')); ...
+                 dir(fullfile(config.img_directory,'**/*.mhd'))];
 else
     assert(length(config.img_directory)<=length(config.markers),"More image "+...
         "directories specified than there are markers")
@@ -38,7 +42,8 @@ else
         all_files{i} = dir(fullfile(config.img_directory(i),'*.*'));
     end
     all_files = cat(1,all_files{:});
-    all_files = all_files(arrayfun(@(s) contains(s.name,ext),all_files),:);
+    names_tmp = {all_files.name}';
+    all_files = all_files(contains(names_tmp, ext));
 end
 
 % Remove output directory folder
@@ -48,14 +53,15 @@ else
     % all_files = all_files(arrayfun(@(s) ~isequal(s.folder,...
         % config.output_directory,'IgnoreCase',true),all_files));
     % modified; Rene
-    all_files = all_files(arrayfun(@(s) ~contains(strcat(s.folder,'/',s.name),...
-        config.output_directory,'IgnoreCase',true),all_files));
+    full_paths = strcat({all_files.folder}', '/', {all_files.name}');
+    all_files = all_files(~contains(full_paths, config.output_directory, 'IgnoreCase', true));
 end
 
 % Get which image extensions are present and subset these images
-idx = false(length(ext),length(all_files));
+names_all = {all_files.name}';
+idx = false(length(ext), length(all_files));
 for i = 1:length(ext)
-    idx(i,:) = arrayfun(@(s) contains(s.name,ext(i)),all_files);
+    idx(i,:) = contains(names_all, ext(i));
 end
 ext_here = ext(any(idx,2));
 
@@ -83,12 +89,10 @@ end
 if isfield(config,'channel_num') && ~isempty(config.channel_num)
     idx = false(length(tiff_files),1);
     c_idx = cell(1,length(config.channel_num));
+    tiff_full = strcat({tiff_files.folder}', '/', {tiff_files.name}');
     for i = 1:length(config.channel_num)
-        % a = arrayfun(@(s) contains(s.name,config.channel_num(i)),tiff_files);
-        % b = a & arrayfun(@(s) contains(s.name,config.markers(i)),tiff_files);
-        % modified to keep folders with channels; Rene
-        a = arrayfun(@(s) contains(strcat(s.folder,'/',s.name),config.channel_num(i)),tiff_files);
-        b = a & arrayfun(@(s) contains(strcat(s.folder,'/',s.name),config.markers(i)),tiff_files);
+        a = contains(tiff_full, config.channel_num(i));
+        b = a & contains(tiff_full, config.markers(i));
         if ~isempty(b) && any(b)
             c_idx{i} = b;
             idx = idx | b;
@@ -102,14 +106,11 @@ if isfield(config,'channel_num') && ~isempty(config.channel_num)
 end
 
 tiff_folders = unique({tiff_files.folder});
-% tiff_folders = unique(cellfun(@(s) strrep(s, '/@eaDir',''),...
-    % unique({tiff_files.folder}), 'UniformOutput', false)); Rene
-% assert(length(tiff_folders) <= length(config.markers),...
-    % "More .tif folders than image markers detected.") Rene
+tiff_names = {tiff_files.name}';
+tiff_folder_arr = {tiff_files.folder}';
 
 % Try matching folders by channel number, then by folder name, then by
 % marker name in file <-- not applicable for hiararchy input
-% path_table_series = cell(1,length(tiff_folders));
 path_table_series = cell(1,length(config.markers));
 files_read = false;
 if length(tiff_folders) == length(config.markers)
@@ -122,20 +123,18 @@ if length(tiff_folders) == length(config.markers)
         end
         % Check folder name
         if isempty(path_idx)
-            path_idx = tiff_files(arrayfun(@(s) contains(s.folder,config.markers(i)),tiff_files));
+            path_idx = tiff_files(contains(tiff_folder_arr, config.markers(i)));
         end
-        
         % Check for unique marker names in filename
         if isempty(path_idx)
-           path_idx = tiff_files(arrayfun(@(s) contains(s.name,config.markers(i)),tiff_files));
+            path_idx = tiff_files(contains(tiff_names, config.markers(i)));
         end
-        
         % Finally, just assign this folder to marker based on index
         if isempty(path_idx)
-            path_idx = tiff_files(arrayfun(@(s) isequal(s.folder,tiff_folders{i}),tiff_files),:);
+            path_idx = tiff_files(strcmp(tiff_folder_arr, tiff_folders{i}));
         end
 
-        % Use regular expressions to extract information and save 
+        % Use regular expressions to extract information and save
         path_table_series{i} = get_table_struct(path_idx, config.sample_id, config.markers(i), i, config.position_exp);
     end
     files_read = true;
@@ -149,20 +148,18 @@ else
         end
         % Check folder name
         if isempty(path_idx)
-            path_idx = tiff_files(arrayfun(@(s) contains(s.folder,config.markers(i)),tiff_files));
+            path_idx = tiff_files(contains(tiff_folder_arr, config.markers(i)));
         end
-        
         % Check for unique marker names in filename
         if isempty(path_idx)
-           path_idx = tiff_files(arrayfun(@(s) contains(s.name,config.markers(i)),tiff_files));
+            path_idx = tiff_files(contains(tiff_names, config.markers(i)));
         end
-        
         % Finally, just assign this folder to marker based on index
         if isempty(path_idx)
-            path_idx = tiff_files(arrayfun(@(s) isequal(s.folder,tiff_folders{i}),tiff_files),:);
+            path_idx = tiff_files(strcmp(tiff_folder_arr, tiff_folders{i}));
         end
 
-        % Use regular expressions to extract information and save 
+        % Use regular expressions to extract information and save
         path_table_series{i} = get_table_struct(path_idx, config.sample_id, config.markers(i), i, config.position_exp);
     end
 end
@@ -182,25 +179,25 @@ elseif ~files_read
     % otherwise give error
     
     % Check files for marker name in the filename
-    c_idx = zeros(length(config.markers),length(tiff_files));
-    f_idx = zeros(1,length(config.markers));
+    c_idx = false(length(config.markers), length(tiff_files));
+    f_idx = false(1, length(config.markers));
     for i = 1:length(config.markers)
-        c_idx(i,:) = arrayfun(@(s) contains(s.name,config.markers(i)),tiff_files);
-        f_idx(i) = f_idx(i) + cellfun(@(s) contains(s,config.markers(i)),tiff_folders);
+        c_idx(i,:) = contains(tiff_names, config.markers(i));
+        f_idx(i) = any(contains(tiff_folders, config.markers(i)));
     end
-    
+
     if ~any(sum(c_idx) > 1)
-        % If unqiue marker present in each filename
+        % If unique marker present in each filename
         for i = 1:length(config.markers)
-            path_idx = tiff_files(logical(c_idx(i,:)));
-            
-            % Use regular expressions to extract information and save 
+            path_idx = tiff_files(c_idx(i,:));
+
+            % Use regular expressions to extract information and save
             path_table_series{i} = get_table_struct(path_idx, config.sample_id, config.markers(i), i, config.position_exp);
         end
-    elseif all(f_idx == ones(1,length(config.markers)))
+    elseif all(f_idx)
         for i = 1:length(config.markers)
-            f = cellfun(@(s) contains(s,config.markers(i)),tiff_folders);
-            path_idx = tiff_files(arrayfun(@(s) isequal(s.folder,tiff_folders{f}),tiff_files));
+            f = contains(tiff_folders, config.markers(i));
+            path_idx = tiff_files(strcmp(tiff_folder_arr, tiff_folders{f}));
             
             % Use regular expressions to extract information and save 
             path_table_series{i} = get_table_struct(path_idx, config.sample_id, config.markers(i), i, config.position_exp);
@@ -392,61 +389,77 @@ end
 
 function path_sub = get_table_struct(path_idx, sample_id, marker, channel, position_exp)
 
-% Save full file path
-path_sub = cell2struct(fullfile({path_idx.folder},{path_idx.name}),'file');
+n = length(path_idx);
+files = fullfile({path_idx.folder}, {path_idx.name})';
+names = {path_idx.name}';
 
-% Get tile and slice information from images
 if length(position_exp) == 1
-    position_exp = horzcat(["", ""],position_exp);
+    position_exp = horzcat(["", ""], position_exp);
 end
 
-% Scan through each filename for relevant information
-for j = 1:length(path_idx)
-    try
-        path_sub(j).sample_id = sample_id;
-        
-        if position_exp ~= []
-            if position_exp(1) ~= ""
-                path_sub(j).y = str2double(regexprep(regexp(path_idx(j).name,position_exp(1),'match'),'[^\d+]',''));
-            else
-                path_sub(j).y =1;
-            end
-            if position_exp(2) ~= ""
-                path_sub(j).x = str2double(regexprep(regexp(path_idx(j).name,position_exp(2),'match'),'[^\d+]',''));
-            else
-                path_sub(j).x = 1;
-            end
-            if position_exp(3) ~= ""
-                path_sub(j).z = str2double(regexprep(regexp(path_idx(j).name,position_exp(3),'match'),'[^\d+]',''));
-            else
-                path_sub(j).z = 1;
-            end
-        % Input as two-level hierarchy; Rene
-        else
-            info = str2double(regexp(path_idx(j).name,'[\d*]+','match'));
-            path_sub(j).y = info(1);
-            path_sub(j).x = info(2);
-            path_sub(j).z = info(3);
-        end
+use_hierarchy = isempty(position_exp);
+y_vals = zeros(n, 1);
+x_vals = zeros(n, 1);
+z_vals = zeros(n, 1);
 
-        if isempty([path_sub(j).z])
-            if contains(path_sub(j).name,'stitched.tif')
-                path_sub = munge_stitched(path_idx);
-                break
-            elseif contains(path_sub(j).name,'aligned.tif')
-                path_sub = munge_aligned(path_idx);
-                break
-            else
-                error("Error reading file: %s",path_sub(j).file)
-            end
-        end
-        path_sub(j).channel_num = channel;
-        path_sub(j).markers = marker;
-    catch ME
-        error("Error reading file: %s",path_sub(j).file)
+% Process in chunks so the progress bar updates incrementally
+chunk_size = 5000;
+n_chunks = max(1, ceil(n / chunk_size));
+bar_width = 30;
+fprintf('  Parsing %d %s files: [%s]   0%%', n, marker, repmat(' ', 1, bar_width));
+for k = 1:n_chunks
+    i1 = (k-1)*chunk_size + 1;
+    i2 = min(k*chunk_size, n);
+    sub = i1:i2;
+    if ~use_hierarchy
+        y_vals(sub) = parse_coord(names(sub), position_exp(1));
+        x_vals(sub) = parse_coord(names(sub), position_exp(2));
+        z_vals(sub) = parse_coord(names(sub), position_exp(3));
+    else
+        all_nums = regexp(names(sub), '\d+', 'match');
+        y_vals(sub) = cellfun(@(m) str2double(m{1}), all_nums);
+        x_vals(sub) = cellfun(@(m) str2double(m{2}), all_nums);
+        z_vals(sub) = cellfun(@(m) str2double(m{3}), all_nums);
+    end
+    pct = k / n_chunks;
+    filled = round(pct * bar_width);
+    bar_str = [repmat('=', 1, filled), repmat(' ', 1, bar_width - filled)];
+    fprintf('\r  Parsing %d %s files: [%s] %3d%%', n, marker, bar_str, round(pct * 100));
+end
+fprintf('\n');
+
+if any(isnan(z_vals))
+    bad_names = names(isnan(z_vals));
+    if all(contains(bad_names, 'stitched.tif'))
+        path_sub = munge_stitched(path_idx);
+        return
+    elseif all(contains(bad_names, 'aligned.tif'))
+        path_sub = munge_aligned(path_idx);
+        return
+    else
+        error("Error reading file: %s", files{find(isnan(z_vals), 1)})
     end
 end
 
+path_sub = struct( ...
+    'file',        files, ...
+    'sample_id',   repmat({sample_id}, n, 1), ...
+    'y',           num2cell(y_vals), ...
+    'x',           num2cell(x_vals), ...
+    'z',           num2cell(z_vals), ...
+    'channel_num', num2cell(repmat(channel, n, 1)), ...
+    'markers',     repmat({marker}, n, 1) ...
+);
+end
+
+
+function vals = parse_coord(names, pattern)
+if pattern == ""
+    vals = ones(length(names), 1);
+else
+    matches = regexp(names, char(pattern), 'match', 'once');
+    vals = str2double(regexprep(matches, '[^\d+]', ''));
+end
 end
 
 
