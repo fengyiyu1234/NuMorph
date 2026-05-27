@@ -477,29 +477,19 @@ end
 
 function write_aligned_images(config,coreg_table,res_equal,res_adj,row,col,y_pos,x_pos,z_pos)
 
-% Write image
-fprintf("%s\t Writing aligned images \n", datetime('now'));
-
 markers = config.markers;
 save_dir = fullfile(config.output_directory,'aligned');
 
-% Create directory to store images
-if ~isfolder(save_dir)
-    mkdir(save_dir);
-end
-    
 % Get table index for translations for each marker
 t_idx = zeros(1,length(markers));
 for i = 2:length(markers)
     if i>1 && ~any(ismember(config.align_channels,i))
         continue
     end
-    %t_idx(i) = find(contains(coreg_table.Properties.VariableNames,'X') &...
-    %    contains(coreg_table.Properties.VariableNames,markers(i)));
     target_col = strcat('X_Shift_', char(markers(i)));
     t_idx(i) = find(strcmp(coreg_table.Properties.VariableNames, target_col));
 end
-    
+
 % Subset images to save
 if ~isempty(config.align_slices)
     save_z = config.align_slices{:};
@@ -507,6 +497,44 @@ if ~isempty(config.align_slices)
 else
     save_z = 1:height(coreg_table);
 end
+
+% Whole-tile early exit: if every expected output file already exists, skip writing
+all_exist = true;
+for i = save_z
+    for j = 1:length(markers)
+        if j > 1 && ~any(ismember(config.align_channels, j))
+            continue
+        end
+        if isequal(config.hierarchy_input, "false")
+            chk_name = sprintf('%s_%s_C%d_%s_0%d_0%d_aligned.tif', ...
+                config.sample_id, num2str(coreg_table.Reference_Z(i), '%04.f'), j, markers(j), row, col);
+            chk_path = fullfile(save_dir, chk_name);
+        else
+            chk_name = sprintf('%d_%d_%d.tif', y_pos, x_pos, z_pos(i));
+            chk_path = fullfile(save_dir, markers(j), sprintf('%d', y_pos), ...
+                sprintf('%d_%d', y_pos, x_pos), chk_name);
+        end
+        if ~isfile(chk_path)
+            all_exist = false;
+            break
+        end
+    end
+    if ~all_exist
+        break
+    end
+end
+if all_exist
+    fprintf("%s\t All images already written for tile (row=%d, col=%d). Skipping.\n", ...
+        datetime('now'), row, col);
+    return
+end
+
+% Create directory to store images
+if ~isfolder(save_dir)
+    mkdir(save_dir);
+end
+
+fprintf("%s\t Writing aligned images \n", datetime('now'));
 
 first_idx = find(cellfun(@(s) ~isempty(s), coreg_table.file_1(save_z)), 1);
 ref_img = imread(coreg_table.file_1{first_idx});
@@ -572,6 +600,9 @@ parfor i = save_z
             img_folder = fullfile(save_dir, markers(j), sprintf('%d', y_pos), ...
                 sprintf('%d_%d', y_pos, x_pos));
             img_path = fullfile(img_folder, img_name);
+        end
+        if isfile(img_path)
+            continue
         end
         imwrite(uint16(mov_img), img_path)
     end
