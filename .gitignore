@@ -6,6 +6,10 @@ tmp/*
 data/atlas/*
 data/annotation_data/*
 data/tmp/*
+
+templates/NM_samples.m
+NM_run.m
+
 src/legacy/*
 src/external/*
 src/analysis/3dunet/nuclei/data/*
