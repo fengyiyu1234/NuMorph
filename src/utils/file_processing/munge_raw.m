@@ -90,15 +90,35 @@ if isfield(config,'channel_num') && ~isempty(config.channel_num)
     idx = false(length(tiff_files),1);
     c_idx = cell(1,length(config.channel_num));
     tiff_full = strcat({tiff_files.folder}', '/', {tiff_files.name}');
-    for i = 1:length(config.channel_num)
-        a = contains(tiff_full, config.channel_num(i));
-        b = a & contains(tiff_full, config.markers(i));
-        if ~isempty(b) && any(b)
-            c_idx{i} = b;
-            idx = idx | b;
-        else
-            c_idx{i} = a;
-            idx = idx | a;
+    if isequal(config.hierarchy_input,"true") && length(config.img_directory) == 1
+        % Hierarchy input: only keep files inside a top-level folder whose
+        % name exactly matches a channel_num entry. Loose images elsewhere
+        % in the sample folder are ignored, and "640nm_2" does not match
+        % "640nm_20"
+        base = strip(strrep(char(config.img_directory),'\','/'),'right','/');
+        folders = strrep({tiff_files.folder}','\','/');
+        in_base = startsWith(folders, [base '/'], 'IgnoreCase', true);
+        rel = repmat({''}, length(folders), 1);
+        rel(in_base) = cellfun(@(s) s(length(base)+2:end), folders(in_base), 'UniformOutput', false);
+        top_folder = string(cellfun(@(s) extractBefore([s '/'],'/'), rel, 'UniformOutput', false));
+        for i = 1:length(config.channel_num)
+            c_idx{i} = top_folder == config.channel_num(i);
+            idx = idx | c_idx{i};
+        end
+        if any(~idx)
+            fprintf("%s\t Ignoring %d image files outside channel folders \n",datetime('now'),sum(~idx))
+        end
+    else
+        for i = 1:length(config.channel_num)
+            a = contains(tiff_full, config.channel_num(i));
+            b = a & contains(tiff_full, config.markers(i));
+            if ~isempty(b) && any(b)
+                c_idx{i} = b;
+                idx = idx | b;
+            else
+                c_idx{i} = a;
+                idx = idx | a;
+            end
         end
     end
     tiff_files = tiff_files(idx);
@@ -138,39 +158,19 @@ if length(tiff_folders) == length(config.markers)
         path_table_series{i} = get_table_struct(path_idx, config.sample_id, config.markers(i), i, config.position_exp);
     end
     files_read = true;
-else
-    % Marker w/ multiple folders added by Rene
-    for i = 1:length(config.markers)
-        path_idx = [];
-        % Check channel num
-        if isfield(config,'channel_num') && ~isempty(config.channel_num)
-            path_idx = tiff_files(c_idx{i});
-        end
-        % Check folder name
-        if isempty(path_idx)
-            path_idx = tiff_files(contains(tiff_folder_arr, config.markers(i)));
-        end
-        % Check for unique marker names in filename
-        if isempty(path_idx)
-            path_idx = tiff_files(contains(tiff_names, config.markers(i)));
-        end
-        % Finally, just assign this folder to marker based on index
-        if isempty(path_idx)
-            path_idx = tiff_files(strcmp(tiff_folder_arr, tiff_folders{i}));
-        end
-
-        % Use regular expressions to extract information and save
-        path_table_series{i} = get_table_struct(path_idx, config.sample_id, config.markers(i), i, config.position_exp);
-    end
 end
 
 % More complicated scenario
-% Different number of folders and markers present
+% Different number of folders and markers present (includes hierarchy input)
 if ~files_read && isfield(config,'channel_num') && ~isempty(config.channel_num)
     % Channel numbers provided to read multiple channels in the same folder
     for i = 1:length(c_idx)
         path_idx = tiff_files(c_idx{i});
-        
+        if isempty(path_idx)
+            error("No images found for channel %s (marker %s)",...
+                config.channel_num(i), config.markers(i))
+        end
+
         % Use regular expressions to extract information and save 
         path_table_series{i} = get_table_struct(path_idx, config.sample_id, config.markers(i), i, config.position_exp);
     end    
