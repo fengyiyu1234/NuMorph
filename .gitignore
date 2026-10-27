@@ -7,7 +7,6 @@ data/atlas/*
 data/annotation_data/*
 data/tmp/*
 
-templates/*
 NM_run.m
 
 src/legacy/*
